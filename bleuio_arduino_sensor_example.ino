@@ -39,8 +39,6 @@ Adafruit_USBH_CDC SerialHost;
 /* Global variables */
 int loop_cnt;
 char dongle_cmd[120];
-/* Change the ID to any 6 hexdigits (upper case needed) */
-char bID[7] = "6EE001";
 uint32_t ALS = 0;
 uint32_t pressure = 0;
 uint32_t temp = 0;
@@ -112,16 +110,15 @@ void setup() {
 }
 
 /* Generate a BleuIO command to change the Advertising Data along with the Advertising Data we want to set.
-   The Advertising Data is setup to mimic the Advertising Message from a HibouAir PM Sensor */
+   The Advertising Data is setup with the flag Manufacturer Specific Data with a made up Company ID 0x1234 (little endian) and the sensor values as the Data */
 void generateAdvData(char * input_buffer, uint16_t lux, uint16_t pressure, uint16_t temperature, uint16_t humidity, uint16_t gas_resistance)
 {
-    sprintf(input_buffer, "AT+ADVDATA=1B:FF:5B:07:05:03:%c%c:%c%c:%c%c:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:00:00:00:00:00:00:00:00:01\r", 
-    bID[0], bID[1], bID[2], bID[3], bID[4], bID[5],
-    (uint8_t) (lux & 0xFF), (uint8_t) (lux >> 8),
-    (uint8_t) (pressure & 0xFF), (uint8_t) (pressure >> 8),
-    (uint8_t) (temperature & 0xFF), (uint8_t) (temperature >> 8),
-    (uint8_t) (humidity & 0xFF), (uint8_t) (humidity >> 8),
-    (uint8_t) (gas_resistance & 0xFF), (uint8_t) (gas_resistance >> 8)
+    sprintf(input_buffer, "AT+ADVDATA=0D:FF:34:12:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X\r", 
+    (uint8_t) (lux >> 8), (uint8_t) (lux & 0xFF), /*big endian*/
+    (uint8_t) (pressure >> 8), (uint8_t) (pressure & 0xFF), /*big endian*/
+    (uint8_t) (temperature >> 8), (uint8_t) (temperature & 0xFF), /*big endian*/
+    (uint8_t) (humidity >> 8), (uint8_t) (humidity & 0xFF), /*big endian*/
+    (uint8_t) (gas_resistance >> 8), (uint8_t) (gas_resistance & 0xFF) /*big endian*/
     );
 }
 
@@ -170,13 +167,12 @@ void loop() {
       Serial.flush();
       /* End OPT3002 */
 
-      /* Setting the sensor values to the format used by HibouAir */
-      ALS = (uint32_t) (result.lux/100);
-      pressure = (uint32_t) (bme.pressure);
-      temp = (uint32_t) (bme.temperature*10);
-      hum = (uint32_t) (bme.humidity*10);
-      voc = (uint32_t) bme.gas_resistance / 100;
-      pressure =  pressure / 10;
+      /* Setting the sensor values to fit in a uint16_t in the adverting message, no decimals*/
+      ALS = (uint32_t) (result.lux/1000); /* uW/cm2 */
+      pressure = (uint32_t) (bme.pressure/100); /* hPa (removing the decimals)*/
+      temp = (uint32_t) (bme.temperature); /* Celcius */
+      hum = (uint32_t) (bme.humidity); /* %Rh*/
+      voc = (uint32_t) bme.gas_resistance / 1000; /* KOhms */
 
       /*Generate Advertising command to send to the BleuIO*/
       generateAdvData(dongle_cmd, ALS, pressure, temp, hum, voc);
